@@ -1,0 +1,13 @@
+{
+  "name": "10_turing-deputy",
+  "version": "1.0.0",
+  "description": "> Transformer 기반 LLM을 JavaScript로 밑바닥부터 구현하는 프로젝트.   > ChatGPT, Claude와 같은 AI를 외부 API 없이, 순수 JS로 직접 만든다.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
