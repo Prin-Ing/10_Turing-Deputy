@@ -1,3 +1,5 @@
+import { Tensor } from "../src/core/tensor";
+
 /**
  * 토큰 id를 연속된 임베딩 벡터로 변환하는 임베딩 레이어입니다.
  *
