@@ -6,15 +6,50 @@ import { Tensor } from "../core/tensor"
  * 각 파라미터마다 1차 모멘트 `m`, 2차 모멘트 `v`를 유지하고,
  * bias correction을 적용한 뒤 weight decay와 함께 값을 갱신합니다.
  */
-class optimizer {
+export class Optimizer {
+  /**
+   * 최적화 대상 파라미터 텐서 목록입니다.
+   */
   params: Tensor[]
+
+  /**
+   * 기본 학습률입니다.
+   */
   lr: number
+
+  /**
+   * AdamW의 weight decay 계수입니다.
+   */
   weightDecay: number
+
+  /**
+   * 1차 모멘트 지수이동평균 계수입니다.
+   */
   beta1: number
+
+  /**
+   * 2차 모멘트 지수이동평균 계수입니다.
+   */
   beta2: number
+
+  /**
+   * 0으로 나누는 상황을 방지하기 위한 작은 상수입니다.
+   */
   eps: number
+
+  /**
+   * 현재 optimization step 수입니다.
+   */
   t: number
+
+  /**
+   * 각 파라미터의 1차 모멘트 버퍼입니다.
+   */
   m: Float32Array[]
+
+  /**
+   * 각 파라미터의 2차 모멘트 버퍼입니다.
+   */
   v: Float32Array[]
 
 

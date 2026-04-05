@@ -5,11 +5,25 @@ import { BPETokenizer } from './tokenizer';
  * 학습용 텍스트 파일을 토큰 id 배열로 읽고,
  * 랜덤한 위치에서 next-token prediction 배치를 생성하는 데이터 로더입니다.
  */
-class DataLoader {
-
+export class DataLoader {
+  /**
+   * 텍스트를 토큰 id로 변환하는 토크나이저입니다.
+   */
   tokenizer: BPETokenizer
+
+  /**
+   * 한 샘플에서 잘라낼 입력 시퀀스 길이입니다.
+   */
   contextLength: number
+
+  /**
+   * 한 번에 생성할 샘플 수입니다.
+   */
   batchSize: number
+
+  /**
+   * 로드된 전체 토큰 id 시퀀스입니다.
+   */
   data: number[]
 
   /**

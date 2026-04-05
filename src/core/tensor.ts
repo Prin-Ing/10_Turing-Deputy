@@ -698,6 +698,17 @@ export class Tensor {
     }
   }
 
+  /**
+   * 시퀀스 logits와 정답 토큰 id를 사용해 평균 cross-entropy loss를 계산합니다.
+   *
+   * 내부적으로 마지막 축 기준 softmax 확률을 구한 뒤,
+   * 각 위치의 정답 토큰 확률에 `-log`를 취해 평균합니다.
+   * backward에서는 `softmax(logits) - one_hot(target)` 형태의 gradient를
+   * 시퀀스 길이로 나눠 logits 텐서의 gradient에 누적합니다.
+   *
+   * @param targets 각 시퀀스 위치의 정답 토큰 id 배열
+   * @returns shape가 `[1]`인 평균 loss 텐서
+   */
   crossEntropy(targets: number[]): Tensor {
     // 1. softmax로 확률 계산
     const probs = this.softmax(-1)

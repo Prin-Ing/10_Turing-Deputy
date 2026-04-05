@@ -5,9 +5,32 @@ import { Tensor } from "../src/core/tensor"
  * and project back to the model dimension.
  */
 export class FeedForward {
+  /**
+   * 입력을 hidden 차원으로 확장하는 up-projection weight입니다.
+   *
+   * shape: `[dModel, dFF]`
+   */
   Wup: Tensor    // [dModel, dFF]
+
+  /**
+   * hidden 표현을 다시 모델 차원으로 줄이는 down-projection weight입니다.
+   *
+   * shape: `[dFF, dModel]`
+   */
   Wdown: Tensor  // [dFF, dModel]
+
+  /**
+   * up-projection 뒤에 더해지는 bias입니다.
+   *
+   * shape: `[dFF]`
+   */
   bUp: Tensor    // [dFF]
+
+  /**
+   * down-projection 뒤에 더해지는 bias입니다.
+   *
+   * shape: `[dModel]`
+   */
   bDown: Tensor  // [dModel]
 
   /**
