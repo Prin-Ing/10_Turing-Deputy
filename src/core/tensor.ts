@@ -297,6 +297,8 @@ export class Tensor {
    *
    * 결과 shape는 두 텐서 shape의 브로드캐스팅 결과로 결정됩니다.
    * 각 결과 좌표는 브로드캐스팅 규칙에 맞는 원본 좌표로 투영한 뒤 계산합니다.
+   * 또한 결과 텐서에 계산 그래프 정보를 기록해, 역전파 시 출력 gradient를
+   * 두 입력 텐서의 gradient 버퍼에 누적합니다.
    *
    * @param other 더할 대상 텐서
    * @returns 원소별 덧셈 결과 텐서
@@ -336,6 +338,9 @@ export class Tensor {
    * 결과 shape는 두 텐서 shape의 브로드캐스팅 결과로 결정됩니다.
    * 각 결과 좌표는 브로드캐스팅 규칙에 맞는 원본 좌표로 투영한 뒤 계산합니다.
    *
+   * 결과 텐서는 계산 그래프에 부모 텐서를 등록하며, 역전파 시
+   * 각 입력에 대해 상대 텐서 값을 곱한 gradient를 계산해 누적합니다.
+   *
    * @param other 곱할 대상 텐서
    * @returns 원소별 곱셈 결과 텐서
    * @throws {Error} 두 shape가 브로드캐스팅되지 않으면 예외를 던집니다.
@@ -350,8 +355,20 @@ export class Tensor {
 
       result.set(indices, this.get(aIndices) * other.get(bIndices));
     });
+    result._deps = [this, other]
+    result._backward = () => {
+      if (!result.grad) return
+      if (!this.grad) this.grad = new Float32Array(this.data.length)
+      if (!other.grad) other.grad = new Float32Array(other.data.length)
 
-    return result;
+      for (let i = 0; i < this.data.length; i++) {
+        this.grad[i] += result.grad[i] * other.data[i]
+      }
+      for (let i = 0; i < other.data.length; i++) {
+        other.grad[i] += result.grad[i] * this.data[i]
+      }
+    }
+    return result
   }
 
   /**
@@ -370,6 +387,10 @@ export class Tensor {
    * shape 규칙:
    * - 왼쪽 텐서의 마지막 축 길이와 오른쪽 텐서의 뒤에서 두 번째 축 길이가 같아야 합니다.
    * - 두 텐서의 배치 차원은 브로드캐스팅 가능해야 합니다.
+   *
+   * 결과 텐서는 계산 그래프에 부모 텐서를 등록하며, 역전파 시
+   * `dX = dZ.matmul(Y^T)`, `dY = X^T.matmul(dZ)` 형태로 gradient를 계산한 뒤
+   * 각 입력 텐서의 gradient 버퍼에 누적합니다.
    *
    * @param otherTensor 오른쪽 피연산자 텐서
    * @returns 입력 형식에 맞게 축이 정리된 행렬 곱 결과 텐서
@@ -615,10 +636,20 @@ export class Tensor {
   }
 
   /**
-   * Applies the tanh-based GELU approximation element-wise.
-   * Returns a new tensor with the same shape.
+   * tanh 기반 GELU 근사를 원소별로 적용한 새 텐서를 반환합니다.
+   *
+   * forward에서는 `0.5 * x * (1 + tanh(u))` 형태의 근사를 사용하고,
+   * backward에서는 각 원소의 GELU 도함수를 계산해 입력 텐서의 gradient에
+   * `result.grad[i] * geluPrime`를 누적합니다.
+   *
+   * @returns GELU가 적용된 새 텐서
    */
   gelu(): Tensor {
+    const data = this.data.map(x =>
+      0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * x ** 3)))
+    )
+    const result = new Tensor(new Float32Array(data), this.shape)
+
     result._deps = [this]
     result._backward = () => {
       if (!result.grad) return
@@ -641,6 +672,8 @@ export class Tensor {
    *
    * 먼저 `_deps`를 따라 그래프를 위상 정렬한 뒤, 시작 텐서의 gradient를
    * 모두 `1`로 초기화하고 역순으로 각 텐서의 `_backward()`를 실행합니다.
+   * 각 `_backward()`는 gradient를 덮어쓰지 않고 누적하도록 설계되어 있어,
+   * 하나의 텐서로 여러 경로가 합류하는 계산 그래프도 처리할 수 있습니다.
    * 일반적으로 loss 텐서에서 호출하는 것을 가정합니다.
    */
   backprop(): void {
@@ -663,5 +696,36 @@ export class Tensor {
     for (const t of topo.reverse()) {
       t._backward()
     }
+  }
+
+  crossEntropy(targets: number[]): Tensor {
+    // 1. softmax로 확률 계산
+    const probs = this.softmax(-1)
+
+    // 2. 각 위치에서 정답 토큰의 확률만 뽑아서 -log
+    const seqLen = this.shape[0]
+    let loss = 0
+    for (let i = 0; i < seqLen; i++) {
+      const prob = probs.data[i * this.shape[1] + targets[i]]
+      loss += -Math.log(prob + 1e-9)  // 1e-9 → log(0) 방지
+    }
+    loss /= seqLen
+
+    const result = new Tensor(new Float32Array([loss]), [1])
+
+    // backward
+    result._deps = [this]
+    result._backward = () => {
+      if (!this.grad) this.grad = new Float32Array(this.data.length)
+      for (let i = 0; i < seqLen; i++) {
+        for (let j = 0; j < this.shape[1]; j++) {
+          const idx = i * this.shape[1] + j
+          const p = probs.data[idx]
+          this.grad[idx] += (p - (j === targets[i] ? 1 : 0)) / seqLen
+        }
+      }
+    }
+
+    return result
   }
 }
