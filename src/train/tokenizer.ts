@@ -14,12 +14,29 @@ import * as fs from 'fs'
 
 /**
  * 파일로 저장되는 BPE 토크나이저 직렬화 형식입니다.
+ *
+ * 현재는 학습된 merge 규칙의 순서만 저장합니다. 기본 byte vocabulary와
+ * 특수 토큰은 `load()` 시 코드로 재구성됩니다.
  */
 type SerializedBPETokenizer = {
   merges: Array<[string, number]>;
 };
 
+/**
+ * UTF-8 바이트 기반 Byte Pair Encoding 토크나이저입니다.
+ *
+ * 설계 특징:
+ * - 기본 vocabulary는 단일 바이트 256개와 미리 정의된 특수 토큰으로 시작합니다.
+ * - 학습 시 가장 자주 등장하는 인접 token pair를 반복적으로 병합합니다.
+ * - 인코딩 시 학습된 merge 순서를 그대로 재적용해 가능한 긴 토큰을 만듭니다.
+ * - 디코딩 시 일반 토큰은 바이트 시퀀스로, 특수 토큰은 문자열 세그먼트로 복원합니다.
+ */
 class BPETokenizer {
+  /**
+   * 예약된 특수 토큰 목록입니다.
+   *
+   * 순서대로 vocabulary 뒤쪽에 추가되며, 저장 파일에는 포함되지 않습니다.
+   */
   private static readonly specialTokens = [
     "<|bos|>",
     "<|eos|>",
@@ -54,6 +71,8 @@ class BPETokenizer {
   /**
    * 문자열을 UTF-8 바이트 시퀀스로 변환하는 인코더입니다.
    */
+  private encoder = new TextEncoder();
+
   /**
    * BOS(beginning of sequence) 특수 토큰 id입니다.
    */
@@ -68,8 +87,6 @@ class BPETokenizer {
    * PAD(padding) 특수 토큰 id입니다.
    */
   padId!: number;
-
-  private encoder = new TextEncoder();
 
   /**
    * UTF-8 바이트 시퀀스를 문자열로 되돌리는 디코더입니다.
@@ -114,6 +131,7 @@ class BPETokenizer {
    * 바이트 단위 vocabulary로 초기화된 BPE 토크나이저를 생성합니다.
    *
    * 생성 직후에는 `0~255`의 모든 단일 바이트가 기본 토큰으로 등록됩니다.
+   * 또한 특수 토큰과 그에 대응하는 편의 id 필드도 함께 초기화됩니다.
    */
   constructor() {
     this.vocab = new Map();
@@ -290,6 +308,7 @@ class BPETokenizer {
    *
    * 먼저 문자열을 UTF-8 바이트 id 시퀀스로 바꾼 뒤, 학습된 `merges` 규칙을
    * 등록 순서대로 적용해 더 긴 토큰으로 병합합니다.
+   * 특수 토큰 문자열은 일반 텍스트와 분리해 병합 없이 그대로 보존합니다.
    *
    * @param text 인코딩할 원시 문자열
    * @returns 토큰 id 배열
@@ -376,7 +395,8 @@ class BPETokenizer {
    * 현재 토크나이저 상태를 JSON 파일로 저장합니다.
    *
    * 현재 구현은 병합 규칙만 저장하며, base byte vocabulary는 `load()` 시 자동으로
-   * 다시 구성됩니다. 파일 포맷은 사람이 읽을 수 있도록 들여쓰기된 JSON입니다.
+   * 다시 구성됩니다. 파일 포맷은 사람이 읽을 수 있도록 들여쓰기된 JSON이며,
+   * merge의 순서를 유지해야 하므로 배열 형태로 기록합니다.
    *
    * @param path 저장할 파일 경로
    */
@@ -393,6 +413,7 @@ class BPETokenizer {
    *
    * 먼저 byte 단위 기본 vocabulary를 다시 만든 뒤, 저장된 `merges`를 순서대로
    * 재적용해 `vocab`, `id2Token`, `merges`를 일관된 상태로 재구성합니다.
+   * 따라서 저장 시점과 동일한 merge 순서가 유지되어야 같은 인코딩 결과를 얻습니다.
    *
    * @param path 불러올 tokenizer JSON 파일 경로
    * @throws {Error} 파일 형식이 올바르지 않거나, 병합 규칙이 잘못되었으면 예외를 던집니다.
