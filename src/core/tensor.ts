@@ -420,36 +420,53 @@ export class Tensor {
   }
 
   /**
-   * 텐서의 모든 원소에 softmax를 적용한 새 텐서를 반환합니다.
+   * 지정한 축을 따라 softmax를 적용한 새 텐서를 반환합니다.
    *
-   * 현재 구현은 특정 축(axis)을 기준으로 나누지 않고, 내부 버퍼 전체를 하나의
-   * 벡터로 간주해 확률 분포로 정규화합니다. 수치 안정성을 위해 먼저 최댓값을 빼고
+   * 기본값은 마지막 축(`axis = -1`)이며, 해당 축을 제외한 나머지 좌표마다
+   * 독립적인 확률 분포를 계산합니다. 수치 안정성을 위해 각 구간에서 최댓값을 먼저 빼고
    * `exp`를 계산합니다.
    *
-   * 결과 텐서는 원본과 같은 shape를 유지하며, 모든 원소의 합은 `1`에 가까워집니다.
+   * 결과 텐서는 원본과 같은 shape를 유지하며, 지정한 축을 따라 더한 값이 `1`에 가까워집니다.
    *
-   * @returns 전체 원소가 softmax 확률값으로 변환된 텐서
+   * @param axis softmax를 적용할 축. 음수면 뒤에서부터 계산합니다.
+   * @returns 지정한 축 기준 softmax 확률값으로 변환된 텐서
    *
    * @example
-   * const logits = new Tensor(new Float32Array([1, 2, 3]), [3]);
+   * const logits = new Tensor(new Float32Array([1, 2, 3, 4]), [2, 2]);
    * const probs = logits.softmax();
    */
-  softmax(): Tensor {
-    const newData = new Float32Array(this.data.length);
-    let expSum = 0;
+  softmax(axis: number = -1): Tensor {
+    const ax = axis < 0 ? this.shape.length + axis : axis
+    const axisSize = this.shape[ax]
+    const result = Tensor.zeros(this.shape)
 
-    // exp 계산 전에 최댓값을 빼서 overflow를 줄입니다.
-    const maxVal = Math.max(...this.data);
+    // axis 제외한 나머지 인덱스 순회
+    Tensor.forEachIndex(
+      this.shape.filter((_, i) => i !== ax),
+      (outerIndices) => {
+        // 1. 최댓값 구하기
+        let maxVal = -Infinity
+        for (let i = 0; i < axisSize; i++) {
+          const idx = [...outerIndices.slice(0, ax), i, ...outerIndices.slice(ax)]
+          maxVal = Math.max(maxVal, this.get(idx))
+        }
 
-    for (let i = 0; i < this.data.length; i++) {
-      expSum += Math.exp(this.data[i] - maxVal);
-    }
+        // 2. exp 합 구하기
+        let expSum = 0
+        for (let i = 0; i < axisSize; i++) {
+          const idx = [...outerIndices.slice(0, ax), i, ...outerIndices.slice(ax)]
+          expSum += Math.exp(this.get(idx) - maxVal)
+        }
 
-    for (let i = 0; i < this.data.length; i++) {
-      newData[i] = Math.exp(this.data[i] - maxVal) / expSum;
-    }
+        // 3. 각 원소 나누기
+        for (let i = 0; i < axisSize; i++) {
+          const idx = [...outerIndices.slice(0, ax), i, ...outerIndices.slice(ax)]
+          result.set(idx, Math.exp(this.get(idx) - maxVal) / expSum)
+        }
+      }
+    )
 
-    return new Tensor(newData, this.shape);
+    return result
   }
 
   /**
@@ -492,9 +509,51 @@ export class Tensor {
 
     return new Tensor(data, this.shape);
   }
+
+  /**
+   * 텐서의 축 순서를 재배열한 새 텐서를 반환합니다.
+   *
+   * `axes`를 지정하면 해당 순서대로 축을 재배치합니다.
+   * `axes`를 생략하면 마지막 두 축만 서로 바꿉니다. 따라서
+   * 2차원 텐서에서는 일반적인 행렬 전치와 동일하게 동작하고,
+   * 3차원 이상에서는 배치 축은 유지한 채 마지막 두 축만 뒤집습니다.
+   *
+   * 내부적으로 원본 텐서의 모든 좌표를 순회하면서,
+   * 새 축 순서에 맞는 위치로 값을 복사합니다.
+   *
+   * @param axes 새 축 순서를 나타내는 순열 배열
+   * @returns 축 순서가 재배열된 새 텐서
+   *
+   * @example
+   * const x = new Tensor(new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+   * const y = x.transpose(); // shape: [3, 2]
+   *
+   * @example
+   * const z = new Tensor(new Float32Array(24), [2, 3, 4]);
+   * const t = z.transpose([1, 0, 2]); // shape: [3, 2, 4]
+   */
+  transpose(axes?: number[]): Tensor {
+    const ndim = this.shape.length
+
+    // axes 없으면 마지막 두 축만 뒤집기
+    const perm = axes ?? [
+      ...Array.from({ length: ndim - 2 }, (_, i) => i),
+      ndim - 1,
+      ndim - 2
+    ]
+
+    const newShape = perm.map(i => this.shape[i])
+    const result = Tensor.zeros(newShape)
+
+    Tensor.forEachIndex(this.shape, (indices) => {
+      const newIndices = perm.map(i => indices[i])
+      result.set(newIndices, this.get(indices))
+    })
+
+    return result
+  }
 }
 
-//TODO: transpose -> attention 할떄
 //TODO: relu -> FFN 할떄
 //TODO: gelu -> FFN 할떄
 //TODO: backward -> trainer 할때
