@@ -31,7 +31,7 @@ type SerializedBPETokenizer = {
  * - 인코딩 시 학습된 merge 순서를 그대로 재적용해 가능한 긴 토큰을 만듭니다.
  * - 디코딩 시 일반 토큰은 바이트 시퀀스로, 특수 토큰은 문자열 세그먼트로 복원합니다.
  */
-class BPETokenizer {
+export class BPETokenizer {
   /**
    * 예약된 특수 토큰 목록입니다.
    *

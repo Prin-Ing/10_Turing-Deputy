@@ -50,7 +50,7 @@ function scaledDotProductAttention(Q: Tensor, K: Tensor, V: Tensor, mask?: Tenso
  * head 단위로 분리하여 scaled dot-product attention을 수행하고
  * 다시 하나의 표현으로 합쳐 최종 출력 투영을 적용합니다.
  */
-class MultiHeadAttention {
+export class MultiHeadAttention {
   /**
    * attention head 개수입니다.
    */
