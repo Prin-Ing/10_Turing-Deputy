@@ -552,8 +552,22 @@ export class Tensor {
 
     return result
   }
-}
+  /**
+   * Applies ReLU element-wise by clamping negative values to 0.
+   * Returns a new tensor with the same shape.
+   */
+  relu(): Tensor {
+    const data = this.data.map(x => Math.max(0, x))
+    return new Tensor(new Float32Array(data), this.shape)
+  }
 
-//TODO: relu -> FFN 할떄
-//TODO: gelu -> FFN 할떄
+  /**
+   * Applies the tanh-based GELU approximation element-wise.
+   * Returns a new tensor with the same shape.
+   */
+  gelu(): Tensor {
+    const data = this.data.map(x => 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * Math.pow(x, 3)))))
+    return new Tensor(new Float32Array(data), this.shape)
+  }
+}
 //TODO: backward -> trainer 할때

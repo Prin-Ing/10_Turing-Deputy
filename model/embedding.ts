@@ -91,7 +91,7 @@ class PositionalEncoding {
 /**
  * 토큰 임베딩과 positional encoding을 합쳐 최종 입력 임베딩을 만드는 레이어입니다.
  */
-class EmbeddingLayer {
+export class EmbeddingLayer {
   /**
    * 토큰 id를 임베딩 벡터로 바꾸는 레이어입니다.
    */
