@@ -1,103 +1,92 @@
-# 🧠 Turing Deputy
+# Turing Deputy
 
-한국어 | [English](./README.en.md) | [日本語](./README.jp.md)
+한국어 | [English](./readme/README.en.md) | [日本語](./readme/README.jp.md)
 
-> Transformer 기반 LLM을 TypeScript로 밑바닥부터 구현하는 프로젝트
-
----
+> TypeScript로 Transformer 기반 언어 모델의 핵심 구성 요소를 직접 구현하는 프로젝트입니다.
 
 ## 소개
 
-외부 API 없이 ChatGPT, Claude와 같은 AI를 순수 TypeScript로 직접 구현하는 프로젝트입니다.  
-Transformer 아키텍처의 핵심 구성 요소를 처음부터 작성하고, 최종적으로는 웹 기반 채팅 UI까지 연결하는 것을 목표로 합니다.
+이 저장소는 외부 모델 API에 의존하지 않고, 언어 모델의 기본 구성 요소를 TypeScript로 직접 작성해보는 학습용 프로젝트입니다.
 
----
+현재 코드베이스에는 다음 요소가 포함되어 있습니다.
 
-## 아키텍처
+- `Tensor` 기반 수치 연산
+- BPE 토크나이저
+- 토큰 임베딩과 positional encoding
+- multi-head self-attention
+- feed-forward network와 GELU
+- transformer block
+- 최종 logits를 생성하는 `TuringDeputy` 모델
+- 데이터 로더와 AdamW 스타일 옵티마이저 초안
+
+## 현재 모델 흐름
 
 ```text
-입력 텍스트
-        │
-        ▼
-[Tokenizer] - BPE 토크나이저
-        │
-        ▼
-[Embedding] - Token Embedding + Positional Encoding
-        │
-        ▼
-[Transformer Block] x N
-        ├── Multi-Head Self-Attention
-        ├── Add & Layer Norm
-        ├── Feed-Forward Network
-        └── Add & Layer Norm
-        │
-        ▼
-[Linear + Softmax] - 다음 토큰 예측
-        │
-        ▼
-출력 텍스트
+ids
+  -> EmbeddingLayer
+  -> TransformerBlock x N
+  -> LayerNorm
+  -> Linear (dModel -> vocabSize)
+  -> logits
 ```
 
----
+현재 `TuringDeputy`의 `forward()`는 위 흐름을 그대로 따릅니다.
 
 ## 프로젝트 구조
 
 ```text
 Turing-Deputy/
+├── model/
+│   ├── attention.ts        # scaled dot-product attention, multi-head attention
+│   ├── embedding.ts        # token embedding, positional encoding, embedding layer
+│   ├── feedForward.ts      # 2-layer FFN + GELU
+│   ├── transformerBlock.ts # attention + FFN block
+│   └── turingDeputy.ts     # top-level language model
 ├── src/
 │   ├── core/
-│   │   ├── tensor.ts          # Tensor 자료구조 + 행렬 연산
-│   │   └── autograd.ts        # 자동 미분
-│   │
-│   ├── train/
-│   │   └── tokenizer.ts       # BPE 토크나이저
-│   │
-│   └── ...
-│
-├── model/
-│   └── embedding.ts           # 토큰 임베딩 + 위치 인코딩
-│
+│   │   └── tensor.ts       # tensor 자료구조와 기본 연산
+│   └── train/
+│       ├── dataloader.ts   # next-token prediction 배치 생성
+│       ├── optimizer.ts    # AdamW 스타일 optimizer
+│       ├── tokenizer.ts    # BPE tokenizer
+│       └── train.ts        # 학습 루프 작업 예정
 ├── data/
-│   └── train.txt              # 학습 데이터
-│
-├── checkpoints/               # 저장된 모델 가중치
+│   └── train.txt           # 학습용 텍스트 데이터
+├── checkpoints/
+│   └── index.ts            # 체크포인트 작업 예정
 ├── package.json
 └── README.md
 ```
 
----
+## 구현 상태
 
-## 설치 및 실행
+- `src/core/tensor.ts`에는 reshape, transpose, matmul, softmax, layernorm, `relu()`, `gelu()`, `backprop()` 등이 구현되어 있습니다.
+- `model/embedding.ts`는 token embedding과 sinusoidal positional encoding을 합친 `EmbeddingLayer`를 제공합니다.
+- `model/attention.ts`는 scaled dot-product attention과 `MultiHeadAttention`을 구현합니다.
+- `model/feedForward.ts`는 GELU를 사용하는 2-layer feed-forward network를 구현합니다.
+- `model/transformerBlock.ts`는 pre-layernorm 방식의 attention/FFN block을 구현합니다.
+- `model/turingDeputy.ts`는 embedding, transformer blocks, final layernorm, linear projection을 연결합니다.
+- `src/train/tokenizer.ts`는 byte-level BPE tokenizer와 저장/로드 로직을 포함합니다.
+- `src/train/dataloader.ts`는 텍스트를 토큰 id로 읽고 학습 배치를 생성합니다.
+- `src/train/optimizer.ts`는 AdamW 스타일 파라미터 업데이트 로직을 담고 있습니다.
+
+## 실행
+
+현재 저장소에는 완성된 학습 진입점이나 추론 CLI는 아직 연결되어 있지 않습니다.
+
+기본 의존성 설치:
 
 ```bash
-git clone https://github.com/yourname/Turing-Deputy
-cd Turing-Deputy
 npm install
-
-npx ts-node src/train/run.ts --data data/train.txt --epochs 10
 ```
 
-서버가 준비되면 `http://localhost:3000`에서 웹 UI에 접속할 수 있습니다.
-
----
-
-## 기술 스택
-
-- TypeScript (Node.js)
-- 직접 구현한 Tensor / Tokenizer / Transformer 구성 요소
-- Web UI
-- Express + SSE
-- GPT-style Decoder-only Transformer
-
----
+현재는 각 모듈 구현과 문서화를 중심으로 정리된 상태이며, 다음 단계는 `train.ts`와 체크포인트 로직을 실제 실행 가능하게 연결하는 것입니다.
 
 ## 참고 자료
 
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762)
 - [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165)
 - [nanoGPT](https://github.com/karpathy/nanoGPT)
-
----
 
 ## 라이선스
 

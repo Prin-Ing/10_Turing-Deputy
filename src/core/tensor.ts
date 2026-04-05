@@ -9,9 +9,11 @@
  * - `shape`: 각 차원의 길이
  * - `strides`: 각 차원의 메모리 보폭
  * - `grad`: 역전파 시 사용할 gradient 버퍼
+ * - `_deps`: 현재 텐서가 의존하는 부모 텐서 목록
+ * - `_backward`: 현재 텐서에서 부모 텐서로 gradient를 전파하는 함수
  *
  * 이 클래스는 텐서 생성, 브로드캐스팅 기반 원소 연산, 행렬 곱,
- * 정규화 계열 연산을 위한 최소 기능을 제공합니다.
+ * 정규화 계열 연산과 간단한 역전파 기능을 위한 최소 기능을 제공합니다.
  */
 export class Tensor {
   /**
@@ -41,6 +43,21 @@ export class Tensor {
   grad: Float32Array | null;
 
   /**
+   * 현재 텐서의 local gradient를 부모 텐서들에 누적하는 backward 함수입니다.
+   *
+   * 각 연산 메서드는 결과 텐서를 만들 때 이 함수를 설정해 두고,
+   * `backprop()` 호출 시 역위상 순서로 실행됩니다.
+   */
+  _backward: () => void
+
+  /**
+   * 현재 텐서가 직접 의존하는 부모 텐서 목록입니다.
+   *
+   * 계산 그래프를 위상 정렬할 때 사용됩니다.
+   */
+  _deps: Tensor[]
+
+  /**
    * 주어진 버퍼와 형태로 텐서를 생성합니다.
    *
    * @param data 텐서 원소가 저장된 1차원 `Float32Array`
@@ -54,6 +71,8 @@ export class Tensor {
     this.shape = shape;
     this.strides = Tensor.computeStrides(shape);
     this.grad = null;
+    this._backward = () => { }
+    this._deps = []
   }
 
   /**
@@ -293,7 +312,21 @@ export class Tensor {
 
       result.set(indices, this.get(aIndices) + other.get(bIndices));
     });
+    result._deps = [this, other]
+    result._backward = () => {
+      // result.grad를 this.grad와 other.grad에 누적
+      if (!result.grad) return
 
+      if (!this.grad) this.grad = new Float32Array(this.data.length)
+      if (!other.grad) other.grad = new Float32Array(other.data.length)
+
+      for (let i = 0; i < this.data.length; i++) {
+        this.grad[i] += result.grad[i]
+      }
+      for (let i = 0; i < other.data.length; i++) {
+        other.grad[i] += result.grad[i]
+      }
+    }
     return result;
   }
 
@@ -415,6 +448,26 @@ export class Tensor {
         }
       }
     });
+
+    result._deps = [this, otherTensor]
+    result._backward = () => {
+      if (!result.grad) return
+      const dZ = new Tensor(result.grad, result.shape)
+
+      // dL/dX = dL/dZ · Yᵀ
+      if (!this.grad) this.grad = new Float32Array(this.data.length)
+      const dX = dZ.matmul(otherTensor.transpose())
+      for (let i = 0; i < this.grad.length; i++) {
+        this.grad[i] += dX.data[i]
+      }
+
+      // dL/dY = Xᵀ · dL/dZ
+      if (!otherTensor.grad) otherTensor.grad = new Float32Array(otherTensor.data.length)
+      const dY = this.transpose().matmul(dZ)
+      for (let i = 0; i < otherTensor.grad.length; i++) {
+        otherTensor.grad[i] += dY.data[i]
+      }
+    }
 
     return result;
   }
@@ -566,8 +619,49 @@ export class Tensor {
    * Returns a new tensor with the same shape.
    */
   gelu(): Tensor {
-    const data = this.data.map(x => 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * Math.pow(x, 3)))))
-    return new Tensor(new Float32Array(data), this.shape)
+    result._deps = [this]
+    result._backward = () => {
+      if (!result.grad) return
+      if (!this.grad) this.grad = new Float32Array(this.data.length)
+
+      for (let i = 0; i < this.data.length; i++) {
+        const x = this.data[i]
+        const u = Math.sqrt(2 / Math.PI) * (x + 0.044715 * x ** 3)
+        const tanhU = Math.tanh(u)
+        const uPrime = Math.sqrt(2 / Math.PI) * (1 + 3 * 0.044715 * x ** 2)
+        const geluPrime = 0.5 * (1 + tanhU) + 0.5 * x * (1 - tanhU ** 2) * uPrime
+        this.grad[i] += result.grad[i] * geluPrime
+      }
+    }
+    return result
+  }
+
+  /**
+   * 현재 텐서를 시작점으로 계산 그래프 전체에 대해 역전파를 수행합니다.
+   *
+   * 먼저 `_deps`를 따라 그래프를 위상 정렬한 뒤, 시작 텐서의 gradient를
+   * 모두 `1`로 초기화하고 역순으로 각 텐서의 `_backward()`를 실행합니다.
+   * 일반적으로 loss 텐서에서 호출하는 것을 가정합니다.
+   */
+  backprop(): void {
+    const topo: Tensor[] = []
+    const visited = new Set<Tensor>()
+
+    const build = (t: Tensor) => {
+      if (visited.has(t)) return
+      visited.add(t)
+      for (const dep of t._deps) build(dep)
+      topo.push(t)
+    }
+
+    build(this)
+
+    // 시작 텐서의 grad를 1로 초기화
+    this.grad = new Float32Array(this.data.length).fill(1)
+
+    // 역순으로 backward 실행
+    for (const t of topo.reverse()) {
+      t._backward()
+    }
   }
 }
-//TODO: backward -> trainer 할때
